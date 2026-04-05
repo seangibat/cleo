@@ -5,7 +5,7 @@ Requires=signal-cli.service
 
 [Service]
 Type=simple
-WorkingDirectory=/home/seaucre/code/cleo2
+WorkingDirectory=/home/seaucre/code/cleo
 ExecStart=/home/seaucre/code/cleo/venv/bin/python3 signal-queue.py
 Restart=on-failure
 RestartSec=5

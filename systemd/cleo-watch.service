@@ -4,8 +4,8 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/seaucre/code/cleo2
-ExecStart=/home/seaucre/code/cleo2/cleo-watch.sh
+WorkingDirectory=/home/seaucre/code/cleo
+ExecStart=/home/seaucre/code/cleo/cleo-watch.sh
 Restart=always
 RestartSec=10
 StandardOutput=journal

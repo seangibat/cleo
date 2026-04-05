@@ -1,0 +1,81 @@
+#!/usr/bin/env python3
+"""
+check-feeds: Show which feeds have unread messages and a preview of each.
+
+Reads inbox/ for trigger files not yet in inbox/.processed.
+Groups by feed_id, shows count + last message preview per feed.
+
+Usage: check-feeds
+"""
+
+import json
+import sys
+from pathlib import Path
+
+PROJECT_DIR = Path(__file__).parent.parent
+INBOX = PROJECT_DIR / "inbox"
+PROCESSED_FILE = INBOX / ".processed"
+
+
+def load_processed() -> set[str]:
+    if PROCESSED_FILE.exists():
+        return set(PROCESSED_FILE.read_text().splitlines())
+    return set()
+
+
+def main() -> None:
+    if not INBOX.exists():
+        print("No inbox — no messages have arrived yet.")
+        return
+
+    processed = load_processed()
+
+    # Collect unprocessed files, grouped by feed_id
+    feeds: dict[str, list[dict]] = {}
+    for f in sorted(INBOX.glob("*.json")):
+        if f.name in processed:
+            continue
+        try:
+            record = json.loads(f.read_text())
+        except Exception:
+            continue
+        fid = record.get("feed_id", f.stem)
+        feeds.setdefault(fid, []).append(record)
+
+    if not feeds:
+        print("No unread messages.")
+        return
+
+    count = len(feeds)
+    total = sum(len(v) for v in feeds.values())
+    print(f"{count} feed(s) with {total} unread message(s):\n")
+
+    for fid, messages in sorted(feeds.items()):
+        last = messages[-1]
+        n = len(messages)
+
+        # Display name: group name if available, otherwise sender name or feed_id
+        display = (
+            last.get("group_name")
+            or last.get("from_name")
+            or last.get("from")
+            or fid
+        )
+
+        text = last.get("text") or ""
+        attachments = last.get("attachments") or []
+        if text:
+            preview = text[:80] + ("…" if len(text) > 80 else "")
+        elif attachments:
+            preview = f"[{len(attachments)} attachment(s)]"
+        else:
+            preview = "[empty]"
+
+        msg_word = "message" if n == 1 else "messages"
+        sender_name = last.get("from_name") or last.get("from") or "?"
+        print(f"  {fid}")
+        print(f"    {n} new {msg_word} — {display} / {sender_name}: {preview!r}")
+
+
+if __name__ == "__main__":
+    main()

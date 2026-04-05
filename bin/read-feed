@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+"""
+read-feed: Read conversation history for a feed and mark it as processed.
+
+Reads from history/{feed}.jsonl and prints the last N messages with timestamps.
+After reading, marks all matching inbox trigger files as processed so
+check-feeds won't show them again.
+
+Usage: read-feed <feed_id> [count]
+
+feed_id examples:
+  +13045043270
+  group.aUQNBvvi33DLDrBWg/j7Ejr5VyrZEydKV/niIN/VY6k=
+
+count defaults to 20.
+"""
+
+import json
+import sys
+from datetime import datetime
+from pathlib import Path
+
+PROJECT_DIR = Path(__file__).parent.parent
+INBOX = PROJECT_DIR / "inbox"
+HISTORY = PROJECT_DIR / "history"
+PROCESSED_FILE = INBOX / ".processed"
+BOT_NUMBER = "+17248852490"
+
+
+def safe_name(fid: str) -> str:
+    return (fid
+            .replace("+", "p")
+            .replace("/", "_")
+            .replace("=", "")
+            .replace(".", "_"))
+
+
+def load_processed() -> set[str]:
+    if PROCESSED_FILE.exists():
+        return set(PROCESSED_FILE.read_text().splitlines())
+    return set()
+
+
+def mark_processed(fid: str) -> None:
+    """Mark all inbox trigger files for this feed as processed."""
+    safe = safe_name(fid)
+    processed = load_processed()
+
+    for f in INBOX.glob(f"*_{safe}.json"):
+        processed.add(f.name)
+
+    INBOX.mkdir(exist_ok=True)
+    PROCESSED_FILE.write_text("\n".join(sorted(processed)) + "\n")
+
+
+def format_ts(ts_ms: int) -> str:
+    try:
+        dt = datetime.fromtimestamp(ts_ms / 1000)
+        return dt.strftime("%m/%d %H:%M")
+    except Exception:
+        return "??/??  ??:??"
+
+
+def main() -> None:
+    if len(sys.argv) < 2:
+        print("Usage: read-feed <feed_id> [count]", file=sys.stderr)
+        sys.exit(1)
+
+    fid = sys.argv[1]
+    count = int(sys.argv[2]) if len(sys.argv) > 2 else 20
+    safe = safe_name(fid)
+
+    history_file = HISTORY / f"{safe}.jsonl"
+    if not history_file.exists():
+        print(f"No history found for {fid!r}")
+        mark_processed(fid)
+        return
+
+    lines = [l for l in history_file.read_text().splitlines() if l.strip()]
+    recent = lines[-count:]
+
+    print(f"=== {fid} — last {len(recent)} of {len(lines)} messages ===\n")
+    for line in recent:
+        try:
+            msg = json.loads(line)
+        except Exception:
+            continue
+
+        ts = format_ts(msg.get("timestamp", 0))
+        sender = msg.get("from", "?")
+        name = msg.get("from_name") or sender
+        if sender == BOT_NUMBER:
+            name = "Cleo"
+
+        text = msg.get("text") or ""
+        attachments = msg.get("attachments") or []
+
+        if text and attachments:
+            body = f"{text}  [+{len(attachments)} attachment(s)]"
+        elif attachments:
+            body = f"[{len(attachments)} attachment(s)]"
+        else:
+            body = text or "[empty]"
+
+        print(f"[{ts}] {name}: {body}")
+
+    mark_processed(fid)
+
+
+if __name__ == "__main__":
+    main()

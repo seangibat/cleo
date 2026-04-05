@@ -1,0 +1,119 @@
+#!/usr/bin/env python3
+"""
+signal-send: Send a Signal message via signal-cli HTTP JSON-RPC.
+
+Reads the message from stdin so heredocs work cleanly and special
+characters (quotes, newlines, unicode) are never mangled by the shell.
+
+Usage:
+    signal-send <recipient>  <<'EOF'
+    Message text here.
+    Can span multiple lines.
+    EOF
+
+recipient:
+    Phone number:  +13045043270
+    Group feed ID: group.aUQNBvvi33DLDrBWg/j7Ejr5VyrZEydKV/niIN/VY6k=
+"""
+
+import json
+import sys
+from pathlib import Path
+
+import requests
+
+PROJECT_DIR = Path(__file__).parent.parent
+CONFIG_FILE = PROJECT_DIR / "config.yaml"
+
+SIGNAL_RPC = "http://127.0.0.1:8080/api/v1/rpc"
+BOT_NUMBER = "+17248852490"
+
+# Load config if available (for bot_number override)
+try:
+    import yaml
+    with open(CONFIG_FILE) as f:
+        _cfg = yaml.safe_load(f)
+    BOT_NUMBER = _cfg.get("bot_number", BOT_NUMBER)
+    SIGNAL_RPC = _cfg.get("signal_rpc_url", SIGNAL_RPC)
+except Exception:
+    pass
+
+
+def main() -> None:
+    if len(sys.argv) < 2:
+        print("Usage: signal-send <recipient>  (message from stdin)", file=sys.stderr)
+        sys.exit(1)
+
+    recipient = sys.argv[1]
+    message = sys.stdin.read().strip()
+
+    if not message:
+        print("Error: no message on stdin", file=sys.stderr)
+        sys.exit(1)
+
+    is_group = recipient.startswith("group.")
+    params: dict = {
+        "account": BOT_NUMBER,
+        "message": message,
+    }
+
+    if is_group:
+        # Strip the "group." prefix to get the raw base64 group ID
+        params["groupId"] = recipient[len("group."):]
+    else:
+        params["recipients"] = [recipient]
+
+    try:
+        resp = requests.post(
+            SIGNAL_RPC,
+            json={"jsonrpc": "2.0", "method": "send", "params": params, "id": 1},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        result = resp.json()
+    except requests.exceptions.ConnectionError:
+        print("Error: signal-cli not reachable at", SIGNAL_RPC, file=sys.stderr)
+        sys.exit(1)
+
+    if "error" in result:
+        print(f"Error: {result['error']}", file=sys.stderr)
+        sys.exit(1)
+
+    print("Sent.")
+
+    # Log to history as Cleo's outbound message
+    _log_outbound(recipient, message, is_group)
+
+
+def _log_outbound(recipient: str, message: str, is_group: bool) -> None:
+    """Append Cleo's outbound message to history so read-feed shows it."""
+    import time
+
+    def safe_name(fid: str) -> str:
+        return (fid
+                .replace("+", "p")
+                .replace("/", "_")
+                .replace("=", "")
+                .replace(".", "_"))
+
+    record = {
+        "timestamp": int(time.time() * 1000),
+        "from": BOT_NUMBER,
+        "from_name": "Cleo",
+        "feed_id": recipient,
+        "text": message,
+        "attachments": [],
+        "type": "group" if is_group else "dm",
+        "group_name": "",
+    }
+
+    history_dir = PROJECT_DIR / "history"
+    history_dir.mkdir(exist_ok=True)
+    safe = safe_name(recipient)
+    history_file = history_dir / f"{safe}.jsonl"
+    with history_file.open("a") as f:
+        f.write(json.dumps(record) + "\n")
+
+
+if __name__ == "__main__":
+    main()

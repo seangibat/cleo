@@ -1,0 +1,15 @@
+[Unit]
+Description=Cleo session watchdog (keeps claude --continue alive in tmux)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/seaucre/code/cleo2
+ExecStart=/home/seaucre/code/cleo2/cleo-watch.sh
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

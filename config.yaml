@@ -1,0 +1,13 @@
+bot_number: '+17248852490'
+signal_rpc_url: 'http://127.0.0.1:8080/api/v1/rpc'
+
+# Individual senders always allowed regardless of which chat they message from
+authorized_senders:
+  - '+13045043270'
+  - 'uuid:c3e6a013-97f7-455f-bc2a-23e7d0521a5c'
+
+# Approved Signal groups — anyone in these groups can interact (and DM the bot)
+authorized_groups:
+  - 'aUQNBvvi33DLDrBWg/j7Ejr5VyrZEydKV/niIN/VY6k='  # Alexandria (Sean + Sofia)
+  - 'Zwmlr+5iyhTdzn3kFoVvEJDLEuT7vQapcQh0ClHBno4='  # bots
+  - 'o48cwp+PXM3exUlQxKCGc22lpUo4tagx91zdrPLmgKY='  # talking with a robot

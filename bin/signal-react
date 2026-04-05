@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+"""
+signal-react: Send a Signal reaction via signal-cli HTTP JSON-RPC.
+
+Usage:
+    signal-react <recipient> <target_author> <target_timestamp> <emoji>
+
+recipient:     who to send the reaction to (phone or group.{id})
+target_author: phone number or UUID of the person who sent the message
+target_timestamp: Unix timestamp in milliseconds of the message to react to
+emoji:         the reaction emoji (e.g. 👍)
+
+Note: target_author and target_timestamp come from read-feed output.
+For DMs, target_author is usually the same as recipient.
+"""
+
+import sys
+from pathlib import Path
+
+import requests
+
+PROJECT_DIR = Path(__file__).parent.parent
+CONFIG_FILE = PROJECT_DIR / "config.yaml"
+
+SIGNAL_RPC = "http://127.0.0.1:8080/api/v1/rpc"
+BOT_NUMBER = "+17248852490"
+
+try:
+    import yaml
+    with open(CONFIG_FILE) as f:
+        _cfg = yaml.safe_load(f)
+    BOT_NUMBER = _cfg.get("bot_number", BOT_NUMBER)
+    SIGNAL_RPC = _cfg.get("signal_rpc_url", SIGNAL_RPC)
+except Exception:
+    pass
+
+
+def main() -> None:
+    if len(sys.argv) < 5:
+        print(
+            "Usage: signal-react <recipient> <target_author> <target_timestamp> <emoji>",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    recipient = sys.argv[1]
+    target_author = sys.argv[2]
+    target_timestamp = int(sys.argv[3])
+    emoji = sys.argv[4]
+
+    is_group = recipient.startswith("group.")
+
+    # signal-cli expects UUID without the "uuid:" prefix
+    if target_author.startswith("uuid:"):
+        target_author = target_author[len("uuid:"):]
+
+    params: dict = {
+        "account": BOT_NUMBER,
+        "emoji": emoji,
+        "targetAuthor": target_author,
+        "targetTimestamp": target_timestamp,
+    }
+
+    if is_group:
+        params["groupId"] = recipient[len("group."):]
+    else:
+        params["recipients"] = [recipient]
+
+    try:
+        resp = requests.post(
+            SIGNAL_RPC,
+            json={"jsonrpc": "2.0", "method": "sendReaction", "params": params, "id": 1},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        result = resp.json()
+    except requests.exceptions.ConnectionError:
+        print("Error: signal-cli not reachable", file=sys.stderr)
+        sys.exit(1)
+
+    if "error" in result:
+        print(f"Error: {result['error']}", file=sys.stderr)
+        sys.exit(1)
+
+    print("Reacted.")
+
+
+if __name__ == "__main__":
+    main()

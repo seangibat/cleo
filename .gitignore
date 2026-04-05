@@ -1,0 +1,18 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Runtime data — not committed
+inbox/
+history/
+.heartbeat
+
+# Memory files are committed, daily logs are not
+memory/20*.md
+memory/summaries/
+
+# Secrets
+.env
+*.key
+.claude/

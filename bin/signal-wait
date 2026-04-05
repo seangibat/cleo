@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# signal-wait: Block until a new message file appears in inbox/.
+# Exits with the filename of the new file on stdout.
+# Designed to be run as a Claude Code background task (TaskCreate).
+#
+# Usage: signal-wait
+# Output: filename of the new inbox file (e.g. "1712345678000_p13045043270.json")
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INBOX="$SCRIPT_DIR/../inbox"
+PROCESSED="$INBOX/.processed"
+mkdir -p "$INBOX"
+
+# Check if there are already unprocessed files waiting before blocking.
+# This handles messages that arrived while Cleo was responding.
+for f in "$INBOX"/*.json; do
+    [[ -f "$f" ]] || continue
+    name="$(basename "$f")"
+    if ! grep -qxF "$name" "$PROCESSED" 2>/dev/null; then
+        echo "$name"
+        exit 0
+    fi
+done
+
+if command -v inotifywait >/dev/null 2>&1; then
+    # Event-driven: zero CPU while waiting
+    inotifywait \
+        --event close_write \
+        --event moved_to \
+        --format '%f' \
+        --quiet \
+        "$INBOX"
+else
+    # Polling fallback (install inotify-tools for better behaviour)
+    >&2 echo "Warning: inotifywait not found, falling back to 1s polling"
+    before=$(ls -1 "$INBOX"/*.json 2>/dev/null | sort | tail -1 || true)
+    while true; do
+        after=$(ls -1 "$INBOX"/*.json 2>/dev/null | sort | tail -1 || true)
+        if [[ -n "$after" && "$after" != "$before" ]]; then
+            basename "$after"
+            break
+        fi
+        sleep 1
+    done
+fi

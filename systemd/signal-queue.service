@@ -1,0 +1,16 @@
+[Unit]
+Description=Cleo signal-queue (polls signal-cli, writes inbox + history)
+After=network.target signal-cli.service
+Requires=signal-cli.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/seaucre/code/cleo2
+ExecStart=/home/seaucre/code/cleo/venv/bin/python3 signal-queue.py
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+"""Emby media server admin. Usage: emby <action> [args]
+Actions: list_users, create_user, set_password, delete_user, list_libraries, scan_library, sessions, server_info, activity_log
+"""
+import json, os, sys
+import requests
+
+def load_config():
+    path = os.path.expanduser("~/.cleo/workspace/private/emby.json")
+    with open(path) as f:
+        return json.load(f)
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: emby <action> [key=value ...]", file=sys.stderr)
+        print("Actions: list_users, create_user, set_password, delete_user, list_libraries, scan_library, sessions, server_info, activity_log", file=sys.stderr)
+        sys.exit(1)
+
+    action = sys.argv[1]
+    kwargs = {}
+    for arg in sys.argv[2:]:
+        if "=" in arg:
+            k, v = arg.split("=", 1)
+            kwargs[k] = v
+
+    cfg = load_config()
+    base = cfg["url"].rstrip("/")
+    headers = {"X-Emby-Token": cfg["api_key"]}
+
+    try:
+        if action == "list_users":
+            resp = requests.get(f"{base}/Users/Query", headers=headers, timeout=10)
+            resp.raise_for_status()
+            for u in resp.json().get("Items", []):
+                admin = " [admin]" if u.get("Policy", {}).get("IsAdministrator") else ""
+                print(f"- {u['Name']}{admin} (id: {u['Id']})")
+
+        elif action == "create_user":
+            name = kwargs.get("name")
+            if not name:
+                print("Error: name=<username> required", file=sys.stderr); sys.exit(1)
+            resp = requests.post(f"{base}/Users/New", headers=headers, json={"Name": name}, timeout=10)
+            resp.raise_for_status()
+            print(f"Created user '{resp.json().get('Name', name)}'")
+
+        elif action == "set_password":
+            uid, pw = kwargs.get("user_id"), kwargs.get("password")
+            if not uid or not pw:
+                print("Error: user_id=<id> password=<pw> required", file=sys.stderr); sys.exit(1)
+            resp = requests.post(f"{base}/Users/{uid}/Password", headers=headers, json={"NewPw": pw, "ResetPassword": False}, timeout=10)
+            resp.raise_for_status()
+            print(f"Password set for {uid}")
+
+        elif action == "delete_user":
+            uid = kwargs.get("user_id")
+            if not uid:
+                print("Error: user_id=<id> required", file=sys.stderr); sys.exit(1)
+            resp = requests.delete(f"{base}/Users/{uid}", headers=headers, timeout=10)
+            resp.raise_for_status()
+            print(f"Deleted user {uid}")
+
+        elif action == "list_libraries":
+            resp = requests.get(f"{base}/Library/MediaFolders", headers=headers, timeout=10)
+            resp.raise_for_status()
+            for f in resp.json().get("Items", []):
+                print(f"- {f['Name']} (type: {f.get('CollectionType', '?')})")
+
+        elif action == "scan_library":
+            requests.post(f"{base}/Library/Refresh", headers=headers, timeout=10)
+            print("Library scan started.")
+
+        elif action == "sessions":
+            resp = requests.get(f"{base}/Sessions", headers=headers, timeout=10)
+            resp.raise_for_status()
+            active = [s for s in resp.json() if s.get("NowPlayingItem")]
+            if not active:
+                print("No active playback sessions.")
+            for s in active:
+                item = s["NowPlayingItem"]
+                title = item.get("Name", "?")
+                series = item.get("SeriesName")
+                if series:
+                    title = f"{series} — {title}"
+                print(f"- {s.get('UserName', '?')} watching '{title}' on {s.get('Client', '?')}")
+
+        elif action == "server_info":
+            resp = requests.get(f"{base}/System/Info", headers=headers, timeout=10)
+            resp.raise_for_status()
+            info = resp.json()
+            print(f"Emby Server v{info.get('Version', '?')}")
+            print(f"Name: {info.get('ServerName', '?')}")
+            print(f"OS: {info.get('OperatingSystemDisplayName', '?')}")
+
+        elif action == "activity_log":
+            limit = int(kwargs.get("limit", 20))
+            resp = requests.get(f"{base}/System/ActivityLog/Entries", headers=headers, params={"Limit": limit}, timeout=10)
+            resp.raise_for_status()
+            for e in resp.json().get("Items", []):
+                print(f"- [{e.get('Severity', 'Info')}] {e.get('Date', '?')}: {e.get('Name', '?')}")
+
+        else:
+            print(f"Unknown action: {action}", file=sys.stderr)
+            sys.exit(1)
+
+    except requests.RequestException as e:
+        print(f"Emby API error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()

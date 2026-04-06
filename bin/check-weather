@@ -1,0 +1,44 @@
+#!/usr/bin/env python3
+"""Check weather via NWS API. Usage: check-weather <location>"""
+import sys
+import requests
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: check-weather <zip or city>", file=sys.stderr)
+        sys.exit(1)
+
+    location = " ".join(sys.argv[1:])
+    ua = {"User-Agent": "cleo/1.0 (weather check)"}
+
+    # Geocode
+    geo = requests.get(
+        "https://geocoding-api.open-meteo.com/v1/search",
+        params={"name": location, "count": 1}, headers=ua, timeout=10,
+    )
+    geo.raise_for_status()
+    results = geo.json().get("results")
+    if not results:
+        print(f"Could not find location: {location}")
+        sys.exit(1)
+
+    place = results[0]
+    lat, lon = place["latitude"], place["longitude"]
+    place_name = f"{place['name']}, {place.get('admin1', '')}"
+
+    # NWS grid
+    points = requests.get(f"https://api.weather.gov/points/{lat},{lon}", headers=ua, timeout=10)
+    points.raise_for_status()
+    forecast_url = points.json()["properties"]["forecast"]
+
+    # Forecast
+    forecast = requests.get(forecast_url, headers=ua, timeout=10)
+    forecast.raise_for_status()
+    periods = forecast.json()["properties"]["periods"]
+
+    print(f"Weather for {place_name}:")
+    for p in periods[:4]:
+        print(f"- {p['name']}: {p['temperature']}°{p['temperatureUnit']} — {p['shortForecast']} (wind: {p['windSpeed']} {p['windDirection']})")
+
+if __name__ == "__main__":
+    main()

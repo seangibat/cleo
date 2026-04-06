@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+"""Audiobookshelf admin. Usage: audiobookshelf <action> [args]
+Actions: list_libraries, list_users, search, recent, sessions, server_info
+"""
+import json, os, sys
+import requests
+
+def load_config():
+    path = os.path.expanduser("~/.cleo/workspace/private/audiobookshelf.json")
+    with open(path) as f:
+        return json.load(f)
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: audiobookshelf <action> [key=value ...]", file=sys.stderr)
+        print("Actions: list_libraries, list_users, search, recent, sessions, server_info", file=sys.stderr)
+        sys.exit(1)
+
+    action = sys.argv[1]
+    kwargs = {}
+    for arg in sys.argv[2:]:
+        if "=" in arg:
+            k, v = arg.split("=", 1)
+            kwargs[k] = v
+
+    cfg = load_config()
+    base = cfg["url"].rstrip("/")
+    headers = {"Authorization": f"Bearer {cfg['api_key']}"}
+
+    try:
+        if action == "list_libraries":
+            resp = requests.get(f"{base}/api/libraries", headers=headers, timeout=10)
+            resp.raise_for_status()
+            for lib in resp.json().get("libraries", []):
+                print(f"- {lib['name']} (id: {lib['id']}, items: {lib.get('stats', {}).get('totalItems', '?')})")
+
+        elif action == "list_users":
+            resp = requests.get(f"{base}/api/users", headers=headers, timeout=10)
+            resp.raise_for_status()
+            for u in resp.json().get("users", resp.json() if isinstance(resp.json(), list) else []):
+                print(f"- {u.get('username', '?')} (type: {u.get('type', '?')})")
+
+        elif action == "search":
+            query = kwargs.get("query") or (sys.argv[2] if len(sys.argv) > 2 and "=" not in sys.argv[2] else None)
+            if not query:
+                print("Error: query required", file=sys.stderr); sys.exit(1)
+            lib_id = kwargs.get("library")
+            # Get first library if not specified
+            if not lib_id:
+                libs = requests.get(f"{base}/api/libraries", headers=headers, timeout=10).json().get("libraries", [])
+                if libs:
+                    lib_id = libs[0]["id"]
+            resp = requests.get(f"{base}/api/libraries/{lib_id}/search", headers=headers, params={"q": query}, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+            for item in data.get("book", data.get("podcast", [])):
+                book = item.get("libraryItem", item)
+                media = book.get("media", {})
+                meta = media.get("metadata", {})
+                print(f"- {meta.get('title', '?')} by {meta.get('authorName', '?')}")
+
+        elif action == "recent":
+            resp = requests.get(f"{base}/api/me/listening-sessions", headers=headers, params={"limit": 10}, timeout=10)
+            resp.raise_for_status()
+            for s in resp.json().get("sessions", []):
+                print(f"- {s.get('displayTitle', '?')} ({s.get('duration', 0)//60}min)")
+
+        elif action == "sessions":
+            resp = requests.get(f"{base}/api/users/online", headers=headers, timeout=10)
+            resp.raise_for_status()
+            users = resp.json().get("openSessions", resp.json() if isinstance(resp.json(), list) else [])
+            if not users:
+                print("No active sessions.")
+            for s in users:
+                print(f"- {s.get('username', '?')} listening to {s.get('displayTitle', '?')}")
+
+        elif action == "server_info":
+            resp = requests.get(f"{base}/api/config", headers=headers, timeout=10)
+            resp.raise_for_status()
+            info = resp.json()
+            print(f"Audiobookshelf v{info.get('version', '?')}")
+
+        else:
+            print(f"Unknown action: {action}", file=sys.stderr)
+            sys.exit(1)
+
+    except requests.RequestException as e:
+        print(f"Audiobookshelf API error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()

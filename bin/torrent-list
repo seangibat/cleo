@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+"""List all torrents in Transmission."""
+import base64, json, os, sys
+import requests
+
+def load_config():
+    path = os.path.expanduser("~/.cleo/workspace/private/trackers.json")
+    with open(path) as f:
+        return json.load(f)
+
+def main():
+    cfg = load_config()
+    trans = cfg["transmission"]
+    url = trans["url"]
+    creds = base64.b64encode(f"{trans['username']}:{trans['password']}".encode()).decode()
+
+    # Get session ID
+    sid = ""
+    try:
+        requests.post(url, headers={"Authorization": f"Basic {creds}"}, timeout=5)
+    except requests.HTTPError as e:
+        sid = e.response.headers.get("X-Transmission-Session-Id", "")
+
+    # First request always 409s with the session ID
+    try:
+        resp = requests.post(url, headers={"Authorization": f"Basic {creds}"}, timeout=5)
+    except:
+        pass
+    try:
+        sid = resp.headers.get("X-Transmission-Session-Id", sid)
+    except:
+        pass
+
+    resp = requests.post(url, json={
+        "method": "torrent-get",
+        "arguments": {"fields": ["name", "status", "percentDone", "rateDownload", "rateUpload", "eta"]}
+    }, headers={
+        "Authorization": f"Basic {creds}",
+        "X-Transmission-Session-Id": sid,
+    }, timeout=10)
+
+    torrents = resp.json().get("arguments", {}).get("torrents", [])
+    if not torrents:
+        print("No torrents in Transmission")
+        return
+
+    status_map = {0: "stopped", 1: "verify pending", 2: "verifying", 3: "queue", 4: "downloading", 5: "queue", 6: "seeding"}
+    for t in torrents[:50]:
+        status = status_map.get(t.get("status", 0), "unknown")
+        percent = int(t.get("percentDone", 0) * 100)
+        name = t.get("name", "Unknown")[:60]
+        down_rate = t.get("rateDownload", 0) / 1024 / 1024
+
+        if status == "downloading" and down_rate > 0:
+            print(f"  DL  {name} — {percent}% ({down_rate:.1f} MB/s)")
+        elif status == "seeding":
+            print(f"  UP  {name} — seeding")
+        elif percent == 100:
+            print(f"  OK  {name} — complete")
+        else:
+            print(f"  --  {name} — {status} ({percent}%)")
+
+if __name__ == "__main__":
+    main()

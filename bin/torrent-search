@@ -1,0 +1,26 @@
+#!/usr/bin/env python3
+"""Search torrents via download.py script. Usage: torrent-search <query> [--type movie|tv|music]"""
+import os, subprocess, sys
+
+SCRIPT = os.path.expanduser("~/.cleo/workspace/scripts/download.py")
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: torrent-search <query> [--type movie|tv|music] [--max-results N]", file=sys.stderr)
+        sys.exit(1)
+
+    args = ["python3", SCRIPT, "--search-only", "--json"] + sys.argv[1:]
+    if "--type" not in sys.argv:
+        args.extend(["--type", "movie"])
+    if "--max-results" not in sys.argv:
+        args.extend(["--max-results", "10"])
+
+    result = subprocess.run(args, capture_output=True, text=True, timeout=60)
+    if result.stdout:
+        print(result.stdout)
+    if result.returncode != 0 and result.stderr:
+        print(result.stderr, file=sys.stderr)
+        sys.exit(result.returncode)
+
+if __name__ == "__main__":
+    main()
